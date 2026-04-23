@@ -37,8 +37,7 @@ def is_valid_spotify_url(url):
 ```
 
 Once a valid URL is submitted, the app displays song metadata and renders the iframe:
-
-![Song iframe rendered in the app]<img width="1083" height="791" alt="cancion" src="https://github.com/user-attachments/assets/302d7c54-e9c5-444e-972c-e1f30114479e" />
+<img width="1083" height="791" alt="cancion" src="https://github.com/user-attachments/assets/302d7c54-e9c5-444e-972c-e1f30114479e" />
 
 
 Inspecting the page source confirms this is **stored XSS** — and there's also an admin bot, which means we have a target to steal cookies from:
